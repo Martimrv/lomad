@@ -14,8 +14,6 @@ __pycache__/
 dashboard-app/node_modules/
 dashboard-app/.env
 dashboard-app/.npmrc
-backend/data/*
-!backend/data/.gitkeep
 .DS_Store
 Thumbs.db
 
@@ -25,6 +23,6 @@ Thumbs.db
 *.png
 figures/
 
-# Ignore large AIS dataset
+# Ignore large raw AIS dataset (733MB) — smaller processed files are committed
 backend/data/AIS_2022_03_31.csv
 
