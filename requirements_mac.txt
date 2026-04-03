@@ -1,0 +1,57 @@
+# macOS (Apple Silicon) requirements for AISLLM
+# Generated from the original Windows requirements.txt
+# Excludes: pywin32, pywinpty (Windows-only)
+# Adds: tensorflow (used by backend/scripts, was missing from original)
+
+# --- Web API ---
+fastapi==0.121.0
+uvicorn==0.38.0
+python-multipart
+
+# --- Data & ML ---
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.7.2
+scipy==1.16.3
+joblib==1.5.2
+
+# --- Deep Learning (replaces torch+cpu from Windows requirements) ---
+tensorflow
+
+# --- Visualization ---
+matplotlib==3.10.7
+
+# --- LLM / AI ---
+openai==1.109.1
+litellm==1.74.9
+crewai==0.203.1
+chromadb==1.1.1
+instructor==1.11.3
+tiktoken==0.12.0
+anthropic
+
+# --- HTTP & Networking ---
+httpx==0.27.2
+requests==2.32.5
+aiohttp==3.13.1
+
+# --- Data formats ---
+pydantic==2.12.3
+pydantic-settings==2.11.0
+python-dotenv==1.1.1
+PyYAML==6.0.2
+orjson==3.11.3
+
+# --- PDF & Document processing ---
+pdfminer.six==20250506
+pdfplumber==0.11.7
+pypdfium2==4.30.0
+beautifulsoup4==4.12.3
+
+# --- Utilities ---
+tqdm==4.67.1
+rich==14.2.0
+tenacity==9.1.2
+python-dateutil==2.9.0.post0
+pytz==2024.1
+arrow==1.3.0

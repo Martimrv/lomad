@@ -1,0 +1,30 @@
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dylib
+*.egg-info/
+*.egg
+*.log
+.env
+.env.*
+*.sqlite3
+dashboard-app/node_modules/
+dashboard-app/.env
+dashboard-app/.npmrc
+backend/data/*
+!backend/data/.gitkeep
+.DS_Store
+Thumbs.db
+
+# Ignore PDFs, LaTeX, images, and figures
+*.pdf
+*.tex
+*.png
+figures/
+
+# Ignore large AIS dataset
+backend/data/AIS_2022_03_31.csv
+
