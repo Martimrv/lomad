@@ -239,30 +239,39 @@ const AnomalyDashboard = () => {
     fetchExplanation();
   }, [selectedVessel?.mmsi]);
 
-  // Combine vessels from both sources
+  // Combine vessels from both sources.
+  //
+  // Display priority is event count (merged consecutive anomalies) over raw
+  // flagged-point count. The clusterer groups runs of in-time anomalies into
+  // a single behavioral incident, which is what an operator actually wants to
+  // triage. Raw point count is kept as a secondary metric for transparency.
   const combinedVessels = useMemo(() => {
     const vesselMap = new Map();
-    
-    // Add advanced/trajectory vessels
+
     advancedVessels.forEach(v => {
+      const eventCount = v.event_count || 0;
+      const anomalyCount = v.anomaly_count || 0;
       vesselMap.set(v.mmsi, {
         mmsi: v.mmsi,
         advancedData: v,
         predictionData: null,
-        anomalyCount: v.anomaly_count || 0,
+        anomalyCount,                                // raw flagged points
         contextualAnomalyCount: v.contextual_anomaly_count || 0,
-        eventCount: v.event_count || 0,
-        hasAnomalies: (v.anomaly_count || 0) > 0,
+        eventCount,                                  // merged events
+        primaryCount: eventCount || anomalyCount,    // what the badge shows
+        hasEventClustering: eventCount > 0 || anomalyCount === 0,
+        hasAnomalies: anomalyCount > 0,
         anomalyTypes: v.anomaly_types || {},
         shipCategory: v.ship_category || 'Unknown'
       });
     });
-    
-    // Merge prediction vessels
+
+    // Prediction-only vessels have no event clustering, so primaryCount falls
+    // back to the raw anomaly count.
     predictionVessels.forEach(v => {
       const points = v.points || [];
       const predAnomalyCount = points.filter(p => p.is_anomaly === 1).length;
-      
+
       if (vesselMap.has(v.mmsi)) {
         const existing = vesselMap.get(v.mmsi);
         existing.predictionData = v;
@@ -274,14 +283,19 @@ const AnomalyDashboard = () => {
           predictionData: v,
           anomalyCount: predAnomalyCount,
           predictionAnomalyCount: predAnomalyCount,
+          eventCount: 0,
+          primaryCount: predAnomalyCount,
+          hasEventClustering: false,
           hasAnomalies: predAnomalyCount > 0,
           anomalyTypes: {},
           shipCategory: 'Unknown'
         });
       }
     });
-    
-    return Array.from(vesselMap.values()).sort((a, b) => b.anomalyCount - a.anomalyCount);
+
+    return Array.from(vesselMap.values()).sort(
+      (a, b) => b.primaryCount - a.primaryCount
+    );
   }, [advancedVessels, predictionVessels]);
 
   // Get events for selected vessel
@@ -467,7 +481,12 @@ const AnomalyDashboard = () => {
         
         <div className="vessel-list">
           {filteredVessels.map((vessel) => {
-            const riskLevel = vessel.anomalyCount >= 10 ? 'critical' : vessel.anomalyCount >= 5 ? 'high' : vessel.anomalyCount >= 2 ? 'medium' : 'low';
+            // Risk thresholds for events (merged) are tighter than for raw
+            // points: a single sustained incident is already meaningful.
+            const useEvents = vessel.hasEventClustering && vessel.eventCount > 0;
+            const riskLevel = useEvents
+              ? (vessel.eventCount >= 5 ? 'critical' : vessel.eventCount >= 3 ? 'high' : vessel.eventCount >= 1 ? 'medium' : 'low')
+              : (vessel.anomalyCount >= 10 ? 'critical' : vessel.anomalyCount >= 5 ? 'high' : vessel.anomalyCount >= 2 ? 'medium' : 'low');
             return (
               <div
                 key={vessel.mmsi}
@@ -477,7 +496,14 @@ const AnomalyDashboard = () => {
                 <div className="vessel-card-header">
                   <span className="vessel-mmsi">MMSI: {vessel.mmsi}</span>
                   {vessel.hasAnomalies && (
-                    <span className={`anomaly-badge badge-${riskLevel}`}>{vessel.anomalyCount}</span>
+                    <span
+                      className={`anomaly-badge badge-${riskLevel}`}
+                      title={useEvents
+                        ? `${vessel.eventCount} merged event${vessel.eventCount !== 1 ? 's' : ''} (${vessel.anomalyCount} flagged points)`
+                        : `${vessel.anomalyCount} flagged points`}
+                    >
+                      {useEvents ? vessel.eventCount : vessel.anomalyCount}
+                    </span>
                   )}
                 </div>
                 {vessel.shipCategory !== 'Unknown' && (
@@ -515,20 +541,27 @@ const AnomalyDashboard = () => {
                   <span className="stat-value">{selectedVessel.advancedData?.sample_count ?? chartData.length}</span>
                   <span className="stat-label">Data Points</span>
                 </div>
-                <div className={`stat-chip ${selectedVessel.anomalyCount > 0 ? 'stat-alert' : ''}`}>
-                  <span className="stat-value">{selectedVessel.anomalyCount}</span>
-                  <span className="stat-label">Anomalies</span>
-                </div>
+                {selectedVessel.hasEventClustering && selectedVessel.eventCount > 0 ? (
+                  <>
+                    <div className="stat-chip stat-alert">
+                      <span className="stat-value">{selectedVessel.eventCount}</span>
+                      <span className="stat-label">Anomaly Events</span>
+                    </div>
+                    <div className="stat-chip" title="Individual anomaly points before merging consecutive runs">
+                      <span className="stat-value">{selectedVessel.anomalyCount}</span>
+                      <span className="stat-label">Flagged Points</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className={`stat-chip ${selectedVessel.anomalyCount > 0 ? 'stat-alert' : ''}`}>
+                    <span className="stat-value">{selectedVessel.anomalyCount}</span>
+                    <span className="stat-label">Anomalies</span>
+                  </div>
+                )}
                 {selectedVessel.contextualAnomalyCount > 0 && (
                   <div className="stat-chip stat-contextual">
                     <span className="stat-value">{selectedVessel.contextualAnomalyCount}</span>
                     <span className="stat-label">Contextual</span>
-                  </div>
-                )}
-                {vesselEvents.length > 0 && (
-                  <div className="stat-chip">
-                    <span className="stat-value">{vesselEvents.length}</span>
-                    <span className="stat-label">Events</span>
                   </div>
                 )}
               </div>

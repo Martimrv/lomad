@@ -19,12 +19,18 @@ from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional
 from datetime import timedelta
 
+try:
+    from .event_clustering import TemporalClusterer
+except ImportError:  # direct script invocation: scripts/ is on sys.path
+    from event_clustering import TemporalClusterer
+
 # Paths
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_DIR = SCRIPT_DIR.parent / "data"
 CLEANED_DATA_PATH = DATA_DIR / "cleaned_data.csv"
 OUTPUT_PATH = DATA_DIR / "trajectory_anomalies.csv"
 METRICS_PATH = DATA_DIR / "trajectory_anomaly_metrics.csv"
+EVENTS_PATH = DATA_DIR / "trajectory_anomaly_events.csv"
 
 
 @dataclass
@@ -344,37 +350,60 @@ def main():
     # Combine results
     full_results = pd.concat(all_results, ignore_index=True)
     metrics_df = pd.DataFrame(all_metrics)
-    
+
+    # Cluster consecutive anomalies into events so the dashboard can show one
+    # incident per behavior, not hundreds of per-point flags.
+    print("\nClustering consecutive anomalies into events...")
+    clusterer = TemporalClusterer(max_gap_seconds=300, min_event_points=2)
+    full_results, events_df = clusterer.cluster_anomalies(full_results)
+    print(f"  Grouped flagged points into {len(events_df)} events")
+
+    # Per-vessel event counts feed the dashboard's "Events" badge.
+    if not events_df.empty:
+        events_per_vessel = events_df.groupby('mmsi').size().to_dict()
+    else:
+        events_per_vessel = {}
+    metrics_df['event_count'] = metrics_df['mmsi'].map(events_per_vessel).fillna(0).astype(int)
+
     # Save results
     output_cols = [
         'mmsi', 'timestamp', 'latitude', 'longitude', 'sog', 'cog', 'heading',
-        'speed_change', 'course_change', 'anomaly_type', 'is_anomaly', 'severity'
+        'speed_change', 'course_change', 'anomaly_type', 'is_anomaly', 'severity',
+        'event_id',
     ]
     full_results[output_cols].to_csv(OUTPUT_PATH, index=False)
     metrics_df.to_csv(METRICS_PATH, index=False)
-    
+    if not events_df.empty:
+        events_df.to_csv(EVENTS_PATH, index=False)
+
     # Print summary
     print("\n" + "=" * 60)
     print("DETECTION COMPLETE")
     print("=" * 60)
-    
+
     total_points = len(full_results)
     total_anomalies = full_results['is_anomaly'].sum()
-    
+    total_events = len(events_df)
+
     print(f"\nTotal data points analyzed: {total_points}")
     print(f"Total anomalies detected: {total_anomalies}")
+    print(f"Total events after merging: {total_events}")
     print(f"Overall anomaly rate: {total_anomalies/total_points*100:.2f}%")
-    
+    if total_anomalies:
+        print(f"Compression ratio: {total_anomalies/total_events:.1f}x (points per event)")
+
     print("\n--- Anomaly Breakdown ---")
     anomaly_counts = full_results['anomaly_type'].value_counts()
     for anomaly_type, count in anomaly_counts.items():
         if anomaly_type != 'none':
             pct = count / total_points * 100
             print(f"  {anomaly_type}: {count} ({pct:.2f}%)")
-    
+
     print(f"\nResults saved to:")
     print(f"  - {OUTPUT_PATH}")
     print(f"  - {METRICS_PATH}")
+    if not events_df.empty:
+        print(f"  - {EVENTS_PATH}")
 
 
 if __name__ == "__main__":

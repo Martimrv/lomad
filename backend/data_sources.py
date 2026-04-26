@@ -230,6 +230,8 @@ def get_trajectory_anomaly_tracks(limit_per_vessel: int = 500) -> Tuple[List[Dic
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         df = df.sort_values(["mmsi", "timestamp"])
 
+    has_event_id = "event_id" in df.columns
+
     tracks: List[Dict] = []
     for mmsi, group in df.groupby("mmsi"):
         trimmed = group.head(limit_per_vessel)
@@ -237,7 +239,14 @@ def get_trajectory_anomaly_tracks(limit_per_vessel: int = 500) -> Tuple[List[Dic
         for _, row in trimmed.iterrows():
             ts = row.get("timestamp")
             ts_str = str(ts) if pd.notna(ts) else None
-            
+
+            event_id_val = row.get("event_id") if has_event_id else None
+            event_id = (
+                str(event_id_val)
+                if has_event_id and pd.notna(event_id_val) and event_id_val != ""
+                else None
+            )
+
             points.append(
                 {
                     "timestamp": ts_str,
@@ -251,15 +260,20 @@ def get_trajectory_anomaly_tracks(limit_per_vessel: int = 500) -> Tuple[List[Dic
                     "anomaly_type": row.get("anomaly_type", "none"),
                     "is_anomaly": int(row.get("is_anomaly", 0)) if pd.notna(row.get("is_anomaly")) else 0,
                     "severity": int(row.get("severity", 0)) if pd.notna(row.get("severity")) else 0,
+                    "event_id": event_id,
                 }
             )
 
         # Calculate vessel-level stats
         anomaly_points = [p for p in points if p["is_anomaly"] == 1]
-        anomaly_types = {}
+        anomaly_types: Dict[str, int] = {}
         for p in anomaly_points:
             at = p["anomaly_type"]
             anomaly_types[at] = anomaly_types.get(at, 0) + 1
+
+        # Merged-event count — the figure the dashboard now surfaces in place of
+        # per-point counts. Only populated when the detector ran the clusterer.
+        event_count = len({p["event_id"] for p in points if p["event_id"]})
 
         tracks.append(
             {
@@ -267,13 +281,15 @@ def get_trajectory_anomaly_tracks(limit_per_vessel: int = 500) -> Tuple[List[Dic
                 "points": points,
                 "sample_count": len(points),
                 "anomaly_count": len(anomaly_points),
+                "event_count": event_count,
                 "anomaly_rate": len(anomaly_points) / len(points) if points else 0,
                 "anomaly_types": anomaly_types,
             }
         )
 
-    # Sort by anomaly count descending
-    tracks.sort(key=lambda x: x["anomaly_count"], reverse=True)
+    # Sort by event count first (the user-facing severity proxy), then by raw
+    # point count as a tiebreaker for vessels whose anomalies didn't cluster.
+    tracks.sort(key=lambda x: (x["event_count"], x["anomaly_count"]), reverse=True)
 
     return tracks, _trajectory_anomaly_cache.last_updated()
 
@@ -302,6 +318,7 @@ def get_trajectory_anomaly_metrics() -> Tuple[List[Dict], Optional[str]]:
                 "mmsi": int(row["mmsi"]) if pd.notna(row["mmsi"]) else None,
                 "total_points": int(row.get("total_points", 0)),
                 "anomaly_points": int(row.get("anomaly_points", 0)),
+                "event_count": int(row.get("event_count", 0)) if pd.notna(row.get("event_count")) else 0,
                 "anomaly_rate": _round(row.get("anomaly_rate"), digits=4),
                 "anomaly_breakdown": breakdown,
                 "max_speed_change": _round(row.get("max_speed_change"), digits=3),
