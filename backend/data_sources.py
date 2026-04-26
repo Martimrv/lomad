@@ -15,8 +15,12 @@ ADVANCED_ANOMALY_FILE = os.path.join(DATA_DIR, "advanced_anomalies.csv")
 ANOMALY_EVENTS_FILE = os.path.join(DATA_DIR, "anomaly_events.csv")
 
 
-class _CachedFrame:
-    """Lightweight cache to avoid re-reading CSVs on every request."""
+class CachedFrame:
+    """Lightweight cache to avoid re-reading CSVs on every request.
+
+    Re-reads the file only when its mtime changes, so updates from training
+    scripts are picked up without restarting the API.
+    """
 
     def __init__(self, path: str):
         self.path = path
@@ -41,13 +45,13 @@ class _CachedFrame:
         return datetime.fromtimestamp(self._mtime).isoformat()
 
 
-_prediction_cache = _CachedFrame(PREDICTION_FILE)
-_prediction_metrics_cache = _CachedFrame(PREDICTION_METRICS_FILE)
-_anomaly_results_cache = _CachedFrame(ANOMALY_RESULTS_FILE)
-_trajectory_anomaly_cache = _CachedFrame(TRAJECTORY_ANOMALY_FILE)
-_trajectory_anomaly_metrics_cache = _CachedFrame(TRAJECTORY_ANOMALY_METRICS_FILE)
-_advanced_anomaly_cache = _CachedFrame(ADVANCED_ANOMALY_FILE)
-_anomaly_events_cache = _CachedFrame(ANOMALY_EVENTS_FILE)
+_prediction_cache = CachedFrame(PREDICTION_FILE)
+_prediction_metrics_cache = CachedFrame(PREDICTION_METRICS_FILE)
+_anomaly_results_cache = CachedFrame(ANOMALY_RESULTS_FILE)
+_trajectory_anomaly_cache = CachedFrame(TRAJECTORY_ANOMALY_FILE)
+_trajectory_anomaly_metrics_cache = CachedFrame(TRAJECTORY_ANOMALY_METRICS_FILE)
+_advanced_anomaly_cache = CachedFrame(ADVANCED_ANOMALY_FILE)
+_anomaly_events_cache = CachedFrame(ANOMALY_EVENTS_FILE)
 
 
 def _round(value: Optional[float], digits: int = 6) -> Optional[float]:

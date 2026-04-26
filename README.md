@@ -1,327 +1,237 @@
 # AIS LLM Boat Trajectory Prediction
 
-A research project for analyzing and predicting vessel trajectories using AIS (Automatic Identification System) data and Large Language Models.
+Research project for analyzing and predicting vessel trajectories using AIS (Automatic Identification System) data with an LSTM-based pipeline, a FastAPI backend, and a React dashboard. Includes layered anomaly detection (prediction-error, trajectory-rule, advanced contextual) and natural-language explanations of vessel behavior.
 
-### Prerequisites
+## Prerequisites
 
-- Python 3.12+ (Apple Silicon / macOS)
-- Node.js 20.15.1+ (for React dashboard)
-- npm 10.7.0+ (for package management)
-- Virtual environment activated
+- Python 3.12+
+- Node.js 20.15.1+ (for the React dashboard)
+- npm 10.7.0+
 
 ## Installation
 
-### Manual Setup
-1. **Navigate to the project directory:**
-   ```bash
-   cd "/Users/amsoaa/Documents/Linnaeus University/Research projects/AISLLM"
-   ```
+### Quick start (Windows)
 
-2. **Create and activate virtual environment:**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
+A virtual environment named `venv` must already exist and be activated by the script. Run one of:
 
-3. **Install Python dependencies:**
-   ```bash
-   pip install -r requirements_mac.txt
-   ```
+```bat
+:: cmd
+setup.bat
+```
 
-4. **Install Node.js dependencies:**
+```powershell
+# PowerShell
+.\setup.ps1
+```
+
+### Manual setup
+
+1. **Create + activate a virtual environment:**
+   - macOS / Linux:
+     ```bash
+     python3 -m venv venv && source venv/bin/activate
+     ```
+   - Windows (PowerShell):
+     ```powershell
+     python -m venv venv; .\venv\Scripts\Activate.ps1
+     ```
+   - Windows (cmd):
+     ```bat
+     python -m venv venv && venv\Scripts\activate.bat
+     ```
+
+2. **Install Python dependencies:**
+   - macOS:
+     ```bash
+     pip install -r requirements_mac.txt
+     ```
+   - Windows / Linux:
+     ```bash
+     pip install -r requirements.txt
+     ```
+
+3. **Install Node.js dependencies:**
    ```bash
    cd dashboard-app
    npm install
    cd ..
    ```
 
-5. **Update requirements (after installing new packages):**
-   ```bash
-   pip freeze > requirements_mac.txt
-   ```
+## Running the application
 
-### Running the Application
+The pipeline runs in five steps. The processed CSVs in `backend/data/` are committed so you can skip steps 1–3 and go straight to launching the API + dashboard if you only want to explore.
 
-1. **Preprocess the AIS data:**
-   ```bash
-   python backend/scripts/preprocess_ais.py
-   ```
+### 1. Preprocess raw AIS data
 
-2. **Train the trajectory prediction model (optional but recommended):**
-   ```bash
-   python backend/scripts/trajectory_predictor.py
-   ```
+The preprocessor expects a raw AIS CSV at `backend/data/AIS_2022_03_31.csv`.
 
-3. **Start the FastAPI backend:**
-   ```bash
-   python -m uvicorn backend.main:app --reload --port 8000
-   ```
-
-4. **Start the React dashboard (in a new terminal):**
-   ```bash
-   cd dashboard-app
-   npm start
-   ```
-
-5. **Access the Application:**
-   - Backend API: http://127.0.0.1:8000/
-   - API documentation: http://127.0.0.1:8000/docs
-   - React Dashboard: http://localhost:3000/
-   - Sample data: http://127.0.0.1:8000/data/sample
-
-## Data Processing Pipeline
-
-### AIS Data Preprocessing
-
-The preprocessing pipeline (`backend/scripts/preprocess_ais.py`) performs comprehensive data preparation for AIS trajectory analysis:
-
-#### 1. **Filtering**
-   - **MMSI Validation:** Removes rows with invalid or missing vessel identifiers
-   - **Speed Filtering:** Removes negative speeds and extreme outliers (>100 knots)
-   - **Course Filtering:** Validates COG (Course Over Ground) values (0-360 degrees)
-   - **Heading Validation:** Ensures heading values are within valid range (0-360 degrees)
-
-#### 2. **Cleaning**
-   - **Outlier Removal:** Uses IQR (Interquartile Range) method to detect and remove speed outliers
-   - **Missing Value Imputation:** Fills missing numeric values using median (per-vessel when possible, otherwise global median)
-   - **Status Standardization:** Standardizes navigational status values
-
-#### 3. **Normalization**
-   - **Speed Normalization:** Normalizes SOG (Speed Over Ground) to [0, 1] range using min-max scaling
-   - **Course Normalization:** Normalizes COG to [0, 1] range (0-360° → 0-1)
-   - **Heading Normalization:** Normalizes heading to [0, 1] range (0-360° → 0-1)
-
-#### 4. **Resampling**
-   - **Row-based Resampling:** Since timestamp data may not be available, uses row-based resampling
-   - Configurable interval (default: 1 = no resampling)
-   - Maintains chronological order per vessel
-
-#### 5. **Trajectory Segmentation**
-   - **Vessel-based Splitting:** Groups data by vessel ID (MMSI)
-   - **Time Gap Detection:** Splits trajectories when row index gap exceeds threshold (default: 100 rows)
-   - **Segment ID Assignment:** Creates unique segment identifiers for each trajectory segment
-
-#### Usage
 ```bash
-# Run preprocessing with default parameters
-python backend/scripts/preprocess_ais.py
-
-# Or customize parameters in the script:
-# - resample_interval: Resampling frequency (default: 1)
-# - time_gap_threshold: Row gap threshold for trajectory splitting (default: 100)
+python -m backend.scripts.load_data
 ```
 
-#### Output
-- **File:** `backend/data/ais_data_preprocessed.csv`
+Output: `backend/data/cleaned_data.csv`.
 
-## Anomaly Detection Pipeline
+### 2. Train the LSTM trajectory predictor
 
-The anomaly module augments trajectory predictions with live alerts when vessels deviate from normal behaviour.
-
-### Training
-
-1. Ensure `backend/data/ais_data_preprocessed.csv` exists (run the preprocessing script first).
-2. Train the anomaly detector:
-   ```bash
-   python backend/scripts/train_anomaly_detector.py --input backend/data/ais_data_preprocessed.csv
-   ```
-   - Computes feature-wise normalization statistics.
-   - Uses the specified quantile (default `0.95`) of point-wise MSE as the alert threshold.
-   - Saves the bundle to `backend/model/anomaly_detector.joblib` plus metrics to `backend/model/anomaly_metrics.json`.
-   - Optional flags:
-     - `--max-rows 5000` to cap rows loaded for faster experiments.
-     - `--quantile 0.98` to tighten/loosen the alert sensitivity.
-
-### Backend Integration
-
-- `GET /trajectories` now enriches each segment with anomaly scores when a model is available.
-- Detected anomalies are pushed to an in-memory queue exposed via:
-  - `GET /anomalies/queue` – latest alerts for map/dashboard consumption.
-  - `GET /anomalies/status` – model availability + most recent evaluation metrics.
-
-### Frontend Behaviour
-
-- The dashboard polls `/anomalies/queue` every 10 seconds.
-- Anomalous trajectories are highlighted on the map and in the sidebar list.
-- Selecting an alert focuses the corresponding vessel and displays detailed anomaly metadata.
-- **Added Columns:**
-  - `timestamp`: Real timestamps (when available)
-  - `latitude`, `longitude`: Real geographic coordinates (degrees)
-  - `row_index`: Row index for time proxy
-  - `sog_normalized`: Normalized speed (0-1)
-  - `cog_normalized`: Normalized course (0-1)
-  - `heading_normalized`: Normalized heading (0-1)
-  - `segment_id`: Unique trajectory segment identifier
-  - `shiptype`: Vessel type name (e.g., "Passenger", "Cargo", "Tanker")
-
-### Trajectory Prediction Model
-
-The project now uses a single lightweight transformer that predicts the next AIS point from recent motion samples.
-
-#### Model Overview
-- **Input features (3D):** `sog`, `cog`, `heading`
-- **Sequence length:** Last 16 timesteps (`SEQ_LEN`)
-- **Prediction horizon:** Next 1 timestep (`PRED_LEN`)
-- **Loss / metric:** Mean Squared Error (MSE)
-- **Artifacts:** `transformer_trajectory.pth`, `input_norm.npz`, `latent_features.npy`, `metrics_report.txt`
-
-#### Training
 ```bash
-python backend/scripts/trajectory_predictor.py
+python backend/scripts/lstm_model.py
 ```
 
-#### Evaluation
+Outputs:
+- `backend/data/vessel_position_predictions.csv` — per-row true vs predicted positions
+- `backend/data/vessel_position_metrics.csv` — per-vessel error metrics
+
+### 3. Generate anomaly results
+
+Prediction-error anomalies (used by `/anomalies/queue` and `/anomalies/predictions`):
+
 ```bash
-python backend/scripts/evaluate_trajectory.py
+python backend/scripts/lstm_anomaly.py
 ```
 
-See `backend/scripts/README_TRAJECTORY_MODELS.md` for more details.
+Output: `backend/data/ais_anomaly_results.csv`.
 
-### Legacy Processing 
-1. **Data Cleaning:**
-   - Convert timestamps to UTC datetime
-   - Validate GPS coordinates (-90≤lat≤90, -180≤lon≤180)
-   - Convert numeric fields and remove invalid entries
-   - Fill missing destinations with "Unknown"
+Optional richer anomaly layers — run individually or via the runner script:
 
-2. **Vessel Grouping:**
-   - Create VESSEL_ID based on destination
-   - Sort by timestamp for chronological order
-   - Preserve all original data points
+```bash
+python run_detector.py
+# or
+python backend/scripts/trajectory_anomaly_detector.py
+python backend/scripts/advanced_anomaly_detector.py
+```
 
-3. **Output:**
-   - Clean CSV file with 8 columns
-   - All 10,000 records preserved
-   - Real coordinates maintained
+Outputs:
+- `backend/data/trajectory_anomalies.csv`
+- `backend/data/trajectory_anomaly_metrics.csv`
+- `backend/data/advanced_anomalies.csv`
+- `backend/data/anomaly_events.csv`
 
-## Tech Stack
+### 4. Start the FastAPI backend
+
+```bash
+python -m uvicorn backend.main:app --reload --port 8000
+```
+
+### 5. Start the React dashboard (new terminal)
+
+```bash
+cd dashboard-app
+npm start
+```
+
+### URLs
+
+- API: http://127.0.0.1:8000/
+- Interactive API docs: http://127.0.0.1:8000/docs
+- React dashboard: http://localhost:3000/
+
+## Configuration
+
+Two paths can be overridden via environment variables:
+
+| Variable                  | Default                                         |
+| ------------------------- | ----------------------------------------------- |
+| `PREPROCESSED_DATA_PATH`  | `backend/data/cleaned_data.csv`                 |
+| `ANOMALY_MODEL_PATH`      | `backend/model/anomaly_detector.joblib`         |
+
+## Data processing pipeline (`backend/scripts/load_data.py`)
+
+- Renames raw AIS columns (`MMSI`, `BaseDateTime`, `LAT`, `LON`, `SOG`, `COG`, `Heading`) to lowercase.
+- Validates timestamps and keeps only numeric MMSI values.
+- Clips outliers in `sog`, `cog`, `heading`, `latitude`, `longitude` via quantile bounds (avoids excessive row loss).
+- Sorts per vessel chronologically.
+- Writes the cleaned dataset to `backend/data/cleaned_data.csv` (unscaled — normalization happens inside the model script).
+
+## Trajectory prediction model (`backend/scripts/lstm_model.py`)
+
+LSTM with **delta prediction** (predicting movement deltas rather than absolute positions, which improved position accuracy by ~10×).
+
+- Input features: `sog`, `cog`, `heading`, `latitude`, `longitude` (sequence of 15 timesteps)
+- Stack: `LSTM(64) → Dropout → LSTM(32) → Dropout → Dense(32) + BatchNorm → Dense(16) → [Dense(4) deltas, Dense(1, σ) anomaly score]`
+- One model per vessel (skips vessels with <100 samples)
+- 80/20 train/test split with EarlyStopping + ReduceLROnPlateau
+- Anomaly flag at the 95th percentile of combined position+motion error
+
+See [backend/scripts/README.md](backend/scripts/README.md) for full architecture, metrics, and extension notes.
+
+## Anomaly detection layers
+
+| Layer | Script | Output | Approach |
+| --- | --- | --- | --- |
+| Prediction error | `lstm_model.py`, `lstm_anomaly.py` | `ais_anomaly_results.csv` | Residuals between LSTM-predicted and observed positions; threshold at mean + 3σ (or 95th percentile in `lstm_model.py`). |
+| Trajectory rules | `trajectory_anomaly_detector.py` | `trajectory_anomalies.csv`, `trajectory_anomaly_metrics.csv` | Direct rule-based detection: speed/course step changes, loitering, drift, zigzag, traffic deviation. |
+| Advanced contextual | `advanced_anomaly_detector.py` | `advanced_anomalies.csv`, `anomaly_events.csv` | Combines all signals with temporal/contextual features and event clustering. |
+
+## API endpoints
+
+### Health & status
+
+- `GET /` — welcome message and endpoint index
+- `GET /health` — service health and dataset availability
+- `GET /models/status` — generated dataset and detector artifact availability
+- `GET /anomalies/status` — anomaly model availability and latest training metrics
+
+### Data
+
+- `GET /data/preprocessed?limit&offset` — paginated rows from `cleaned_data.csv` (max `limit=1000`)
+- `GET /data/sample?n` — first `n` rows (max 100)
+- `GET /data/stats` — record counts and per-column numeric stats
+
+### Trajectories
+
+- `GET /trajectories?ship_type&segment_id&mmsi&limit&include_coordinates` — trajectories grouped by `segment_id`
+- `GET /trajectories/mmsi?limit` — list of MMSIs with sample counts
+
+### Predictions
+
+- `GET /predictions/vessels?limit_per_vessel` — true vs predicted coordinates per vessel
+- `GET /predictions/metrics?top_n` — per-vessel MSE and anomaly counts
+
+### Anomalies
+
+- `GET /anomalies/queue?limit` — recent alert summaries derived from `ais_anomaly_results.csv`
+- `GET /anomalies/predictions?limit` — per-row anomaly prediction points
+- `GET /trajectory-anomalies/vessels?limit_per_vessel`
+- `GET /trajectory-anomalies/metrics`
+- `GET /trajectory-anomalies/types` — catalog of trajectory anomaly types
+- `GET /advanced-anomalies/vessels?limit_per_vessel`
+- `GET /advanced-anomalies/events?limit`
+- `GET /advanced-anomalies/summary`
+
+### Explanations
+
+- `GET /vessel/{mmsi}/explanation` — natural-language explanation of prediction-error anomalies
+- `GET /vessel/{mmsi}/trajectory-explanation` — natural-language explanation of trajectory anomalies
+
+## Tech stack
 
 ### Backend
-- **FastAPI** - Modern web framework for building APIs
-- **Pandas** - Data manipulation and analysis
-- **NumPy** - Numerical computing
-- **Uvicorn** - ASGI server for FastAPI
-
-### Data Science
-- **Scikit-learn** - Machine learning library
-- **Python-dateutil** - Date/time utilities
-- **Pytz** - Timezone handling
+- **FastAPI** — web framework
+- **Uvicorn** — ASGI server
+- **Pandas / NumPy** — data manipulation
+- **scikit-learn** — preprocessing
+- **TensorFlow / Keras** — LSTM model
 
 ### Frontend
-- **React** - Modern JavaScript library for building user interfaces
-- **Create React App** - Development environment and build tooling
-- **Recharts** - Charting library for trajectory visualization
-- **React-Leaflet** - React wrapper for Leaflet maps
-- **Leaflet** - Interactive map library (similar to MovingPandas folium/hvplot)
-- **Axios** - HTTP client for API communication
+- **React 19** + **Create React App**
+- **react-leaflet** + **Leaflet** — interactive map
+- **Recharts** — charts
+- **axios** — HTTP client
 
-### Development
-- **Virtual Environment** - Isolated Python environment
-- **Requirements.txt** - Python dependency management
-- **package.json** - Node.js dependency management
+## Frontend dashboard
 
-## API Endpoints
+- **Map view**: vessel trajectories on OpenStreetMap, color-coded by ship type, with start/end markers when a trajectory is selected.
+- **Charts**: SOG / COG / heading timelines, combined normalized features view.
+- **Filters**: ship type, MMSI, segment.
+- **Anomaly views**: trajectory anomalies, advanced events, and natural-language explanations per vessel.
+- Backend polling for live data; click a trajectory to drill in.
 
-### GET /
-- **Description:** Welcome message with available endpoints
-- **Response:** JSON with welcome message and endpoint list
+Components: `App.js`, `components/TrajectoryViewer.js`, `components/TrajectoryMap.js`, `components/AnomalyDashboard.js`.
 
-### GET /health
-- **Description:** Health check endpoint
-- **Response:** JSON with system status and model availability
+## Research goals
 
-### GET /data/preprocessed
-- **Description:** Get preprocessed AIS data with pagination
-- **Parameters:**
-  - `limit` (int, default: 100, max: 1000): Number of records to return
-  - `offset` (int, default: 0): Number of records to skip
-- **Response:** JSON with data array and metadata
-
-### GET /data/sample
-- **Description:** Get sample preprocessed data
-- **Parameters:**
-  - `n` (int, default: 10, max: 100): Number of sample records
-- **Response:** JSON array with sample vessel data
-
-### GET /data/stats
-- **Description:** Get statistics about the preprocessed dataset
-- **Response:** JSON with dataset statistics (total records, unique vessels, numeric stats)
-
-### GET /models/status
-- **Description:** Check availability of the trajectory model and cached artifacts
-- **Response:** JSON with transformer availability and latent feature status
-
-### POST /predict/trajectory
-- **Description:** Predict the next AIS point from the latest observations
-- **Request Body:**
-  ```json
-  {
-    "sequence": [[sog, cog, heading], ...],  // Last 16 timesteps
-    "model_type": "transformer"
-  }
-  ```
-  - **Note:** Input features should be normalized with the same statistics used for training (see `input_norm.npz`)
-- **Response:**
-  ```json
-  {
-    "predictions": [[sog, cog, heading]],
-    "model_type": "transformer",
-    "input_length": 16,
-    "prediction_length": 1
-  }
-  ```
-- **Note:** Requires the transformer weights (`transformer_trajectory.pth`). Train using `python backend/scripts/trajectory_predictor.py`
-
-### GET /trajectories
-- **Description:** Get trajectory data for visualization
-- **Parameters:**
-  - `ship_type` (string, optional): Filter by ship type (e.g., "Passenger", "Cargo")
-  - `segment_id` (int, optional): Filter by specific segment ID
-  - `limit` (int, default: 100): Maximum number of segments to return
-- **Response:** JSON with trajectory data grouped by segment
-
-### GET /trajectories/ship-types
-- **Description:** Get list of available ship types with counts
-- **Response:** JSON array with ship type statistics
-
-## Frontend Dashboard
-
-The React dashboard provides interactive visualization of AIS trajectory data, inspired by [MovingPandas ship data analysis](https://movingpandas.github.io/movingpandas-website/2-analysis-examples/ship-data.html).
-
-### Features
-- **Map Visualization:** Interactive map showing vessel trajectories on real-world maps (similar to [MovingPandas example](https://movingpandas.github.io/movingpandas-website/2-analysis-examples/ship-data.html))
-  - Trajectories displayed as colored lines on OpenStreetMap
-  - Color-coded by ship type (Passenger=blue, Tanker=red, Cargo=orange, etc.)
-  - Click trajectories on map to view details
-  - Start/end markers for selected trajectories
-- **Trajectory Visualization:** Interactive charts showing speed, course, and heading over time
-- **Ship Type Filtering:** Filter trajectories by vessel type (Passenger, Cargo, etc.)
-- **Multi-Chart View:** 
-  - Speed Over Ground (SOG) timeline
-  - Course Over Ground (COG) timeline
-  - Heading timeline
-  - Combined normalized features view
-- **Trajectory Selection:** Click on any trajectory to view detailed charts and map
-- **Real-time Data:** Fetches data from the FastAPI backend
-
-### Components
-- `TrajectoryViewer` - Main component for trajectory visualization
-- `TrajectoryMap` - Interactive map component using react-leaflet
-- Uses Recharts for interactive charts
-- Uses Leaflet/OpenStreetMap for geographic visualization
-- Responsive design for desktop and mobile
-
-### Usage
-1. Start the backend: `uvicorn backend.main:app --reload`
-2. Start the frontend: `cd dashboard-app && npm start`
-3. Open http://localhost:3000 in your browser
-4. Select a ship type filter or browse all trajectories
-5. Click on a trajectory to view detailed charts
-
-### Research Goals
-- [x] Develop transformer-based trajectory prediction model
-- [x] Create interactive dashboard for vessel tracking
-- [ ] Implement real-time AIS data ingestion
-- [x] Add machine learning pipeline for pattern recognition
-
----
+- [x] LSTM trajectory predictor with delta-based outputs
+- [x] Multi-layer anomaly detection (prediction, trajectory, contextual)
+- [x] Interactive dashboard for vessel tracking and anomaly review
+- [x] Per-vessel natural-language explanations
+- [ ] Real-time AIS data ingestion
