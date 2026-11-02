@@ -1,5 +1,7 @@
 # LOMAD: Local Anomaly Detection in Maritime Trajectories Using LSTM Prediction and Visual Analytics
 
+Test
+
 Maritime surveillance operators face an ever-growing volume of Automatic Identification System (AIS) data and must decide, in near real time, which vessel behaviours warrant investigation. Fully automated detectors are rarely deployed without human oversight given incomplete data, missing ground-truth labels, and the evolving nature of anomalous patterns. We present LOMAD, an interactive visual-analytics tool that combines per-vessel LSTM trajectory prediction with multi-layered anomaly scoring---trajectory-based, prediction-based, and contextual---to detect \textit{local anomalies}: deviations confined to a portion of a vessel's track. Scores are surfaced through coordinated geographic, temporal, and explanatory views, allowing operators to rank vessels by severity, inspect supporting evidence, and decide whether flagged behaviour is genuinely suspicious or a data artefact. We demonstrate LOMAD on real AIS traffic and show how the integration of three complementary detectors with template-based explanations facilitates intuitive and interpretable exploration of vessel behaviour.
 
 ## Prerequisites
